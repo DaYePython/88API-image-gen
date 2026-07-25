@@ -5,14 +5,73 @@ import { basename, dirname, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
-const API_ROOT = "https://88api.ai";
-const IMAGES_GENERATIONS_URL = `${API_ROOT}/v1/images/generations`;
-const IMAGES_EDITS_URL = `${API_ROOT}/v1/images/edits`;
+const DEFAULT_API_ROOT = "https://88api.ai";
 const IMAGE_MODEL = "gpt-image-2";
 const DEFAULT_TRANSPORT = "images";
 const TRANSPORTS = new Set(["auto", "images"]);
 const CONFIG_PATH = join(homedir(), ".codex", "88api-image-gen-config.json");
 const LEGACY_CONFIG_PATH = join(homedir(), ".codex", "fhl-image-gen-config.json");
+
+/** Resolved at runtime from config (`apiRoot`) or DEFAULT_API_ROOT. */
+let activeApiRoot = DEFAULT_API_ROOT;
+
+function normalizeApiRoot(value, options = {}) {
+  const allowEmpty = options.allowEmpty === true;
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    if (allowEmpty) return null;
+    throw new Error("API root is required and must be a valid http(s) URL.");
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`Invalid API root URL: "${raw}". Expected a full URL such as https://88api.ai`);
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`API root must use http or https: "${raw}"`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`API root must not include credentials: "${raw}"`);
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error(`API root must not include query string or hash: "${raw}"`);
+  }
+
+  const pathPart = parsed.pathname && parsed.pathname !== "/"
+    ? parsed.pathname.replace(/\/+$/, "")
+    : "";
+  return `${parsed.protocol}//${parsed.host}${pathPart}`;
+}
+
+function resolveApiRoot(config) {
+  try {
+    const fromConfig = normalizeApiRoot(config?.apiRoot, { allowEmpty: true });
+    return fromConfig || DEFAULT_API_ROOT;
+  } catch (error) {
+    console.warn(`WARNING: Invalid stored apiRoot ignored; using default ${DEFAULT_API_ROOT}. ${error?.message || String(error)}`);
+    return DEFAULT_API_ROOT;
+  }
+}
+
+function setActiveApiRoot(apiRoot) {
+  activeApiRoot = normalizeApiRoot(apiRoot || DEFAULT_API_ROOT);
+  return activeApiRoot;
+}
+
+function getApiRoot() {
+  return activeApiRoot || DEFAULT_API_ROOT;
+}
+
+function getImagesGenerationsUrl(apiRoot = getApiRoot()) {
+  return `${apiRoot}/v1/images/generations`;
+}
+
+function getImagesEditsUrl(apiRoot = getApiRoot()) {
+  return `${apiRoot}/v1/images/edits`;
+}
 
 const MAX_GENERATION_COUNT = 9;
 const MAX_REPEAT = 50;
@@ -241,6 +300,28 @@ function normalizeConfigShape(config) {
     changed = true;
   }
   if (!Array.isArray(source.workers)) changed = true;
+
+  if ("apiRoot" in source) {
+    const rawApiRoot = String(source.apiRoot || "").trim();
+    if (!rawApiRoot) {
+      delete normalized.apiRoot;
+      changed = true;
+    } else {
+      try {
+        const normalizedRoot = normalizeApiRoot(rawApiRoot);
+        if (normalizedRoot !== source.apiRoot) {
+          normalized.apiRoot = normalizedRoot;
+          changed = true;
+        } else {
+          normalized.apiRoot = normalizedRoot;
+        }
+      } catch {
+        delete normalized.apiRoot;
+        changed = true;
+      }
+    }
+  }
+
   return { config: normalized, changed };
 }
 
@@ -333,6 +414,8 @@ function isWorkerLimitExceeded(config) {
 function buildConfigSummary(config) {
   const workers = getConfiguredWorkers(config);
   const enabledWorkers = workers.filter((worker) => worker.enabled !== false);
+  const apiRoot = resolveApiRoot(config);
+  const customApiRoot = Boolean(String(config?.apiRoot || "").trim());
   return {
     密钥状态: workers.length > 0 ? "已配置" : "未配置",
     密钥预览: workers.length === 1 ? previewKey(workers[0].apiKey) : null,
@@ -340,6 +423,10 @@ function buildConfigSummary(config) {
     已启用密钥数: enabledWorkers.length,
     密钥上限: MAX_WORKERS,
     是否超出上限: workers.length > MAX_WORKERS ? "是" : "否",
+    API根地址: apiRoot,
+    API根地址来源: customApiRoot ? "自定义" : "默认",
+    文生图接口: getImagesGenerationsUrl(apiRoot),
+    图生图接口: getImagesEditsUrl(apiRoot),
     默认传输: "Images API（仅使用 gpt-image-2）",
     密钥列表: workers.map(summarizeWorker),
     快速模式: config?.quickMode || null,
@@ -1146,7 +1233,7 @@ async function generateImageViaImagesApiOnce(apiKey, prompt, size, outputDir, op
   const preview = options.preview === true;
   const start = Date.now();
   try {
-    const res = await requestWithTimeout(IMAGES_GENERATIONS_URL, {
+    const res = await requestWithTimeout(getImagesGenerationsUrl(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1234,7 +1321,7 @@ async function editImageViaImagesApiOnce(apiKey, sources, prompt, size, outputDi
   const sourceName = summarizeSources(sources);
   const rawLogPath = options.rawLogPath || null;
   try {
-    const res = await requestWithTimeout(IMAGES_EDITS_URL, {
+    const res = await requestWithTimeout(getImagesEditsUrl(), {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -3035,6 +3122,7 @@ function parseArgs(argv) {
     if (value === "--get-config") args.flags.getConfig = true;
     else if (value === "--list-workers") args.flags.listWorkers = true;
     else if (value === "--set-key" && argv[i + 1]) args.flags.setKey = argv[++i];
+    else if (value === "--set-api-root" && argv[i + 1]) args.flags.setApiRoot = argv[++i];
     else if (value === "--add-worker-key" && argv[i + 1]) args.flags.addWorkerKey = argv[++i];
     else if (value === "--worker-name" && argv[i + 1]) args.flags.workerName = argv[++i];
     else if (value === "--set-worker-key" && argv[i + 2]) {
@@ -3114,12 +3202,14 @@ function parseArgs(argv) {
 }
 
 function printUsage() {
+  const apiRoot = getApiRoot();
   console.log(`88API-image-gen
 
 CONFIG
   --get-config
   --list-workers
   --set-key <YOUR_88API_IMAGE_GROUP_KEY>
+  --set-api-root <https://host.example>    full http(s) URL; default ${DEFAULT_API_ROOT}
   --add-worker-key <ANOTHER_88API_IMAGE_GROUP_KEY> [--worker-name <name>]
   --set-worker-key <worker> <key>
   --remove-worker <worker>
@@ -3131,6 +3221,7 @@ CONFIG
 FIRST USE
   runtime: Node.js 18+ (Python is not required)
   create one or more image-generation group keys at https://88api.ai/
+  optional: --set-api-root when using a compatible reverse proxy or mirror (must be a valid http(s) URL)
   recommended: one key/worker; add distinct keys only for concurrent independent images
   maximum: ${MAX_WORKERS} workers; multiple workers can use substantial memory and are not recommended on low-spec computers
 
@@ -3170,9 +3261,9 @@ TOOLS
   --self-test-workflow
 
 DEFAULTS
-  API root: ${API_ROOT}
-  generation endpoint: ${IMAGES_GENERATIONS_URL}
-  edit endpoint: ${IMAGES_EDITS_URL}
+  API root: ${apiRoot} (default ${DEFAULT_API_ROOT}; configure with --set-api-root)
+  generation endpoint: ${getImagesGenerationsUrl(apiRoot)}
+  edit endpoint: ${getImagesEditsUrl(apiRoot)}
   image model: ${IMAGE_MODEL}
   API mode: gpt-image-2 Images API only; no GPT text model required
   request quality: fixed ${FIXED_REQUEST_QUALITY}
@@ -3222,6 +3313,7 @@ function resolveGenerationParams(flags, modeConfig) {
 async function main() {
   const { prompts, flags } = parseArgs(process.argv.slice(2));
   const config = loadConfig();
+  setActiveApiRoot(resolveApiRoot(config));
   let requestedTransport;
   try {
     requestedTransport = normalizeTransport(flags.transport || DEFAULT_TRANSPORT);
@@ -3238,6 +3330,23 @@ async function main() {
 
   if (flags.listWorkers) {
     printWorkerList(config);
+    return;
+  }
+
+  if (flags.setApiRoot) {
+    let apiRoot;
+    try {
+      apiRoot = normalizeApiRoot(flags.setApiRoot);
+    } catch (error) {
+      console.error(`ERROR: ${error?.message || String(error)}`);
+      process.exit(1);
+    }
+    config.apiRoot = apiRoot;
+    saveConfig(config);
+    setActiveApiRoot(apiRoot);
+    console.log(`88API API root saved: ${apiRoot}`);
+    console.log(`generation: ${getImagesGenerationsUrl(apiRoot)}`);
+    console.log(`edit: ${getImagesEditsUrl(apiRoot)}`);
     return;
   }
 

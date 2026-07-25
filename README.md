@@ -93,7 +93,25 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
 
 配置保存在本机 `~/.codex/88api-image-gen-config.json`，查看配置时只显示脱敏摘要。
 
-### 3. 可选：增加 worker
+### 3. 可选：自定义 API 根地址
+
+默认 API 根地址为 `https://88api.ai`。若使用兼容的反向代理、镜像或自建网关，可像配置 Key 一样持久化保存：
+
+```powershell
+node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --set-api-root "https://your-gateway.example"
+node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
+```
+
+要求：
+
+- 必须是完整的 `http://` 或 `https://` URL
+- 不要携带用户名密码、查询参数或 `#` 片段
+- 末尾斜杠会被自动去掉；若网关挂在子路径，可写成 `https://host.example/prefix`
+- 实际请求地址为 `{API根地址}/v1/images/generations` 与 `{API根地址}/v1/images/edits`
+
+`--get-config` 会显示 `API根地址`、`API根地址来源`（`默认` / `自定义`）以及推导出的文生图 / 图生图接口。
+
+### 4. 可选：增加 worker
 
 一个 Key 就能正常使用。多个 Key 只会并行处理多张独立图片，不会加速单张图片。
 
@@ -201,6 +219,7 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --workflow-batch-edit 
 ## 排错
 
 - **没有 Key：**访问 88api.ai 创建生图分组 Key，再运行 `--set-key` 和 `--get-config`。
+- **自定义网关连不上：**确认 `--set-api-root` 写入的是可访问的完整 `http(s)` URL，并用 `--get-config` 核对 `文生图接口` / `图生图接口`。
 - **模型权限错误：**确认使用的是 88API“生图分组 Key”，并且可以访问 `gpt-image-2` Images API。
 - **图片编辑失败：**确认路径存在、格式为 PNG/JPG/JPEG/WebP，并使用 `--edit --image`。
 - **比例报错：**只使用上表支持的比例，不要传入 `--size`。

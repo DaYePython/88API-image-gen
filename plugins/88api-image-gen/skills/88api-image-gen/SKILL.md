@@ -45,6 +45,23 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --set-key "<YOUR_88API
 
 `<YOUR_88API_IMAGE_GROUP_KEY>` is a placeholder and must be replaced with the real key created by the user at 88api.ai. Never write the real key into repository files, documentation, commits, logs, or the assistant response. Prefer letting the user enter it directly in their local terminal; if the user explicitly supplies it for configuration, do not echo it back.
 
+- Optional API root (same config file as the key). Default is `https://88api.ai`. When the user needs a compatible reverse proxy, mirror, or self-hosted gateway, save a full `http://` or `https://` URL with:
+
+```bash
+node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --set-api-root "https://your-gateway.example"
+node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
+```
+
+`--set-api-root` validation rules:
+
+- Value must parse as a complete URL with `http:` or `https:` only
+- Reject credentials in the URL, query strings, and hash fragments
+- Trailing slashes are stripped; a path prefix is allowed, e.g. `https://host.example/v1-proxy`
+- Endpoints become `{API根地址}/v1/images/generations` and `{API根地址}/v1/images/edits`
+- `--get-config` reports `API根地址`, `API根地址来源` (`默认` or `自定义`), `文生图接口`, and `图生图接口`
+
+Do not invent a custom API root. Only set it when the user explicitly provides a gateway URL.
+
 - If the user wants multiple independent 88API workers, add more keys with:
 
 ```bash
@@ -88,7 +105,7 @@ Transport policy:
 
 This plugin now supports one plugin with many independent API workers.
 
-- Each worker is one API key with the same 88API base URL, model settings, and fixed 2K ratio matrix
+- Each worker is one API key sharing the configured API root (`apiRoot` / `--set-api-root`, default `https://88api.ai`), model settings, and fixed 2K ratio matrix
 - The worker pool is capped at 10 API workers
 - Multiple workers increase memory usage; do not recommend them on low-spec computers
 - Single tasks use one worker only
@@ -313,8 +330,9 @@ node "$HOME\plugins\88api-image-gen\scripts\generate.mjs" --nail-stress-test --p
 
 ## API Contract
 
-- Text-to-image: `POST https://88api.ai/v1/images/generations`
-- Image edit: `POST https://88api.ai/v1/images/edits`
+- API root: configurable with `--set-api-root <http(s) URL>`; default `https://88api.ai`; stored as `apiRoot` in `~/.codex/88api-image-gen-config.json`
+- Text-to-image: `POST {API_ROOT}/v1/images/generations`
+- Image edit: `POST {API_ROOT}/v1/images/edits`
 - Model: always `gpt-image-2`; GPT text-model permission is not required
 - Request size policy: always use the fixed 2K preset matrix and the supported aspect list above; do not request 1K, 4K, disabled ratios, or arbitrary `--size`
 - Auth: `Authorization: Bearer <88API Key>`
