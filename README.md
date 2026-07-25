@@ -1,28 +1,29 @@
 # 88API-image-gen
 
-> 来源于 [88api.ai Token 聚合站](https://88api.ai/) 的 Codex 专用生图插件。
+> 来源于 [88api.ai Token 聚合站](https://88api.ai/) 的生图插件，支持 Codex、Claude Code、Cursor 和 Hermes。
 
-`88API-image-gen v0.4.0` 基于 `gpt-image-2`，由 Codex 当前会话模型理解需求并整理提示词，提供文生图、图生图、多参考图、流式预览、批量任务及最多 10 个 worker 的调度能力。
+`88API-image-gen v0.5.0` 基于 `gpt-image-2`，由当前会话模型理解需求并整理提示词，提供文生图、图生图、多参考图、流式预览、批量任务及最多 10 个 worker 的调度能力。四个客户端共用同一份核心脚本和同一份本机配置（`~/.agents/88api-image-gen-config.json`），Key 只需配置一次。
 
 > [!CAUTION]
-> **低配置电脑切勿批量生图或启用多个 worker。** 本地卡死、断网、Codex 崩溃或图片保存失败，不会撤销已经提交到 88API 云端的请求；云端已受理或完成的任务仍可能计费。首次使用请保持单 Key、单 worker、`--concurrency 1`。
+> **低配置电脑切勿批量生图或启用多个 worker。** 本地卡死、断网、客户端崩溃或图片保存失败，不会撤销已经提交到 88API 云端的请求；云端已受理或完成的任务仍可能计费。首次使用请保持单 Key、单 worker、`--concurrency 1`。
 
-## v0.4.0 核心能力
+## v0.5.0 核心能力
 
 - 核心生图模型为 `gpt-image-2`。
-- Codex 自动整理提示词、识别参考图角色；用户要求原文直传时不改写。
+- 当前会话模型自动整理提示词、识别参考图角色；用户要求原文直传时不改写。
 - 所有任务只使用 Image2 Images API，不需要 GPT‑5.5 或其他文本模型权限。
 - 文生图显式使用 `--preview` 时，通过 Images API 原生 SSE 获得真实 partial-image 预览。
 - 支持文生图、单图编辑、多参考图编辑、连续出图和通用批量工作流。
 - 支持断点续跑、失败补洞、任务报告和最多 10 个独立 worker。
 - 已受理或状态未知的请求标记为 `[NO-RETRY]`，禁止自动重发或跨接口回退，避免重复扣费。
 - 上游像素不精确时，插件在 Windows、macOS 和 Linux 本地完成精确尺寸处理。
+- 一个仓库同时适配 Codex、Claude Code、Cursor、Hermes；配置目录统一为 `~/.agents/`，旧版 `~/.codex/` 配置自动迁移。
 
 ## 安装
 
 ### 环境要求
 
-- Codex
+- 以下任一客户端：Codex / Claude Code / Cursor / Hermes
 - Node.js 18 或更高版本，推荐 Node.js 20+
 - 可以访问 GitHub 和 88API
 - 至少一个 88API“生图分组 Key”
@@ -39,20 +40,41 @@ node --version
 - macOS：系统自带 `sips`。
 - Linux/Unix：需要 ImageMagick，确认 `magick` 或 `convert` 可用。
 
-### 让 Codex 安装
-
-把仓库地址 [blackdm666/88API-image-gen](https://github.com/blackdm666/88API-image-gen) 交给 Codex，并告诉它：
-
-> 安装仓库中的 `88api-image-gen` 插件，检查 Node.js 和本地图片处理环境；如果没有配置 Key，提醒我先去 88api.ai 创建生图分组 Key。
-
-也可以手动安装：
+### 方式一：一键安装脚本（推荐，覆盖 Cursor / Hermes / Claude / 通用目录）
 
 ```bash
-codex plugin marketplace add blackdm666/88API-image-gen
+git clone https://github.com/DaYePython/88API-image-gen.git
+cd 88API-image-gen
+bash install.sh            # Windows 用 install.ps1
+```
+
+脚本会自动检测本机已安装的客户端（`~/.claude`、`~/.cursor`、`~/.hermes`），把共享 skill 链接进去；检测到 Hermes 时还会安装桌面生图面板。只装某一个客户端用 `--target claude|cursor|hermes|agents`，卸载用 `--uninstall`。
+
+### 方式二：各客户端原生插件命令
+
+Codex：
+
+```bash
+codex plugin marketplace add DaYePython/88API-image-gen
 codex plugin add 88api-image-gen@88api-plugins
 ```
 
-已经添加过 marketplace 时，只执行第二条命令。插件无需启动常驻服务，安装并配置 Key 后直接在 Codex 对话中提出生图需求即可。
+Claude Code：
+
+```
+/plugin marketplace add DaYePython/88API-image-gen
+/plugin install 88api-image-gen@88api-plugins
+```
+
+Cursor 与 Hermes 没有等价的远程插件命令，使用方式一的 `install.sh` 即可。
+
+### 方式三：让 AI 客户端自己安装
+
+把仓库地址 [DaYePython/88API-image-gen](https://github.com/DaYePython/88API-image-gen) 交给 Codex，并告诉它：
+
+> 安装仓库中的 `88api-image-gen` 插件，检查 Node.js 和本地图片处理环境；如果没有配置 Key，提醒我先去 88api.ai 创建生图分组 Key。
+
+插件无需启动常驻服务，安装并配置 Key 后直接在对话中提出生图需求即可。
 
 ## 首次配置 Key
 
@@ -78,8 +100,8 @@ codex plugin add 88api-image-gen@88api-plugins
 将占位符替换为真实 Key：
 
 ```powershell
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --set-key "<YOUR_88API_IMAGE_GROUP_KEY>"
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
+node "$GEN" --set-key "<YOUR_88API_IMAGE_GROUP_KEY>"
+node "$GEN" --get-config
 ```
 
 出现以下内容即表示成功：
@@ -91,15 +113,15 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
 }
 ```
 
-配置保存在本机 `~/.codex/88api-image-gen-config.json`，查看配置时只显示脱敏摘要。
+配置保存在本机 `~/.agents/88api-image-gen-config.json`，查看配置时只显示脱敏摘要。
 
 ### 3. 可选：自定义 API 根地址
 
 默认 API 根地址为 `https://88api.ai`。若使用兼容的反向代理、镜像或自建网关，可像配置 Key 一样持久化保存：
 
 ```powershell
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --set-api-root "https://your-gateway.example"
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
+node "$GEN" --set-api-root "https://your-gateway.example"
+node "$GEN" --get-config
 ```
 
 要求：
@@ -116,26 +138,32 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
 一个 Key 就能正常使用。多个 Key 只会并行处理多张独立图片，不会加速单张图片。
 
 ```powershell
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --add-worker-key "<ANOTHER_IMAGE_GROUP_KEY>" --worker-name worker-2
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --list-workers
+node "$GEN" --add-worker-key "<ANOTHER_IMAGE_GROUP_KEY>" --worker-name worker-2
+node "$GEN" --list-workers
 ```
 
 worker 上限为 10，但低配置电脑不要配置多个。
 
 ## 使用
 
+下文的 `$GEN` 指核心脚本 `generate.mjs` 的路径。安装方式不同，路径也不同：
+
+- 通过 `install.sh` / git clone 安装：仓库内 `plugins/88api-image-gen/scripts/generate.mjs`，例如 `GEN="$HOME/88API-image-gen/plugins/88api-image-gen/scripts/generate.mjs"`
+- 通过 Codex 插件命令安装：`$HOME/plugins/88api-image-gen/scripts/generate.mjs`
+- 在 Claude Code / Cursor / Hermes 对话中使用时无需手动拼路径——skill 会自动解析脚本位置，直接说出生图需求即可
+
 默认输出目录：`~/Pictures/88api-image-gen`。
 
 ### 文生图
 
 ```powershell
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --prompt "在河边钓鱼的小狗" --aspect 16:9
+node "$GEN" --prompt "在河边钓鱼的小狗" --aspect 16:9
 ```
 
 需要真实中间预览时显式开启：
 
 ```powershell
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --prompt "在河边钓鱼的小狗" --aspect 16:9 --preview
+node "$GEN" --prompt "在河边钓鱼的小狗" --aspect 16:9 --preview
 ```
 
 partial image 可能增加图像输出用量或费用，具体以 88API 控制台为准；批量任务不要开启预览。
@@ -143,9 +171,9 @@ partial image 可能增加图像输出用量或费用，具体以 88API 控制�
 ### 图生图与多参考图
 
 ```powershell
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --edit --image "C:\path\input.png" --prompt "改成 9:16 竖版商业海报" --aspect 9:16
+node "$GEN" --edit --image "C:\path\input.png" --prompt "改成 9:16 竖版商业海报" --aspect 9:16
 
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --edit --image "C:\path\person.png" --image "C:\path\product.png" --prompt "保持人物身份，准确使用产品特征生成展示图" --aspect 9:16
+node "$GEN" --edit --image "C:\path\person.png" --image "C:\path\product.png" --prompt "保持人物身份，准确使用产品特征生成展示图" --aspect 9:16
 ```
 
 参考图按命令参数顺序通过 multipart `image[]` 传入同一个 Images edit 请求，不会先拼图。单次最多 10 张。
@@ -154,16 +182,16 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --edit --image "C:\pat
 
 ```powershell
 # 同一提示词生成多张，范围 1..9
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --prompt "产品商业海报" --count 2 --concurrency 1
+node "$GEN" --prompt "产品商业海报" --count 2 --concurrency 1
 
 # 连续生成，范围 1..50
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --prompt "产品商业海报" --repeat 2 --concurrency 1
+node "$GEN" --prompt "产品商业海报" --repeat 2 --concurrency 1
 
 # 多个不同提示词
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --batch-inline "提示词一" "提示词二" --concurrency 1
+node "$GEN" --batch-inline "提示词一" "提示词二" --concurrency 1
 
 # 每张源图分别编辑
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --batch-edit --edit --image "C:\path\one.png" --image "C:\path\two.png" --prompt "分别生成商品海报" --concurrency 1
+node "$GEN" --batch-edit --edit --image "C:\path\one.png" --image "C:\path\two.png" --prompt "分别生成商品海报" --concurrency 1
 ```
 
 批量前确认内存充足和请求数量。`429/502/503/504/524` 等请求受理前错误可以重试；`[NO-RETRY]` 表示任务可能已被云端受理，插件不会重发。
@@ -173,7 +201,7 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --batch-edit --edit --
 适合“固定参考图 + 一批变量图 + 多个场景模板”。任务总数等于变量图数量乘以模板数量，必须先 `--dry-run`：
 
 ```powershell
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --workflow-batch-edit --fixed-ref "<固定参考图.png>" --item-dir "<变量图目录>" --template-inline "保持主体特征，生成 9:16 展示图" --limit 1 --aspect 9:16 --concurrency 1 --dry-run
+node "$GEN" --workflow-batch-edit --fixed-ref "<固定参考图.png>" --item-dir "<变量图目录>" --template-inline "保持主体特征，生成 9:16 展示图" --limit 1 --aspect 9:16 --concurrency 1 --dry-run
 ```
 
 确认任务数量后去掉 `--dry-run`。工作流支持断点续跑、自动补洞，并生成：
@@ -186,7 +214,7 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --workflow-batch-edit 
 内置美甲试戴预设：
 
 ```powershell
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --workflow-batch-edit --fixed-ref "<人物参考图.png>" --item-dir "<产品图目录>" --preset nail-tryon --limit 1 --concurrency 1 --aspect 9:16 --dry-run
+node "$GEN" --workflow-batch-edit --fixed-ref "<人物参考图.png>" --item-dir "<产品图目录>" --preset nail-tryon --limit 1 --concurrency 1 --aspect 9:16 --dry-run
 ```
 
 ## Image2 接口模式
@@ -224,12 +252,12 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --workflow-batch-edit 
 - **图片编辑失败：**确认路径存在、格式为 PNG/JPG/JPEG/WebP，并使用 `--edit --image`。
 - **比例报错：**只使用上表支持的比例，不要传入 `--size`。
 - **批量超时：**先降到 `--concurrency 1`；不要手动重发 `[NO-RETRY]` 任务，先到 88API 使用日志确认状态。
-- **安装失败：**确认已添加 `blackdm666/88API-image-gen` marketplace，再安装 `88api-image-gen@88api-plugins`。
+- **安装失败：**确认已添加 `DaYePython/88API-image-gen` marketplace，再安装 `88api-image-gen@88api-plugins`。
 
 ## 项目信息
 
-- 版本：`0.4.0`
-- GitHub：[blackdm666/88API-image-gen](https://github.com/blackdm666/88API-image-gen)
+- 版本：`0.5.0`
+- GitHub：[DaYePython/88API-image-gen](https://github.com/DaYePython/88API-image-gen)
 - marketplace：`88api-plugins`
 - 插件：`88api-image-gen@88api-plugins`
-- 更新说明：[docs/更新说明-v0.4.0.md](docs/更新说明-v0.4.0.md)
+- 更新说明：[docs/更新说明-v0.5.0.md](docs/更新说明-v0.5.0.md)
