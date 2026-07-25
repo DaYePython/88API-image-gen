@@ -9,8 +9,13 @@ const DEFAULT_API_ROOT = "https://88api.ai";
 const IMAGE_MODEL = "gpt-image-2";
 const DEFAULT_TRANSPORT = "images";
 const TRANSPORTS = new Set(["auto", "images"]);
-const CONFIG_PATH = join(homedir(), ".codex", "88api-image-gen-config.json");
-const LEGACY_CONFIG_PATH = join(homedir(), ".codex", "fhl-image-gen-config.json");
+const CONFIG_PATH = join(homedir(), ".agents", "88api-image-gen-config.json");
+// Legacy locations are checked oldest-first; the newest match wins and is
+// re-saved to CONFIG_PATH on load, so upgrades migrate silently.
+const LEGACY_CONFIG_PATHS = [
+  join(homedir(), ".codex", "fhl-image-gen-config.json"),
+  join(homedir(), ".codex", "88api-image-gen-config.json"),
+];
 
 /** Resolved at runtime from config (`apiRoot`) or DEFAULT_API_ROOT. */
 let activeApiRoot = DEFAULT_API_ROOT;
@@ -337,14 +342,23 @@ function saveConfig(config) {
 }
 
 function loadConfig() {
-  const sourcePath = existsSync(CONFIG_PATH)
-    ? CONFIG_PATH
-    : (existsSync(LEGACY_CONFIG_PATH) ? LEGACY_CONFIG_PATH : null);
+  let sourcePath = existsSync(CONFIG_PATH) ? CONFIG_PATH : null;
+  let migratedFromLegacy = false;
+  if (!sourcePath) {
+    // Pick the newest legacy location that exists so a previously migrated
+    // ~/.codex/88api-image-gen-config.json wins over the older fhl-* file.
+    for (const legacyPath of LEGACY_CONFIG_PATHS) {
+      if (existsSync(legacyPath)) {
+        sourcePath = legacyPath;
+        migratedFromLegacy = true;
+      }
+    }
+  }
   if (!sourcePath) return normalizeConfigShape({}).config;
   try {
     const parsed = JSON.parse(readFileSync(sourcePath, "utf8"));
     const normalized = normalizeConfigShape(parsed);
-    if (normalized.changed || sourcePath === LEGACY_CONFIG_PATH) saveConfig(normalized.config);
+    if (normalized.changed || migratedFromLegacy) saveConfig(normalized.config);
     return normalized.config;
   } catch (error) {
     console.warn(`WARNING: Unable to read 88API configuration at ${sourcePath}: ${error?.message || String(error)}`);

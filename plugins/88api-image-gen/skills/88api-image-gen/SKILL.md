@@ -330,7 +330,7 @@ node "$HOME\plugins\88api-image-gen\scripts\generate.mjs" --nail-stress-test --p
 
 ## API Contract
 
-- API root: configurable with `--set-api-root <http(s) URL>`; default `https://88api.ai`; stored as `apiRoot` in `~/.codex/88api-image-gen-config.json`
+- API root: configurable with `--set-api-root <http(s) URL>`; default `https://88api.ai`; stored as `apiRoot` in `~/.agents/88api-image-gen-config.json`
 - Text-to-image: `POST {API_ROOT}/v1/images/generations`
 - Image edit: `POST {API_ROOT}/v1/images/edits`
 - Model: always `gpt-image-2`; GPT text-model permission is not required
