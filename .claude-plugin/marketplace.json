@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "88api.ai Token 聚合站的生图插件市场：gpt-image-2 Images API、真实流式预览、多 worker 批量工作流。",
-    "version": "0.5.0"
+    "version": "0.6.0"
   },
   "plugins": [
     {
       "name": "88api-image-gen",
       "source": "./",
       "description": "来自 88api.ai Token 聚合站的生图插件：只调用 gpt-image-2 Images API，支持文生图、多参考图编辑、SSE 实时预览和最多 10 worker 的批量工作流。",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "author": {
         "name": "88api.ai"
       },

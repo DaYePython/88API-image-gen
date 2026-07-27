@@ -7,7 +7,7 @@
 #
 # Usage:
 #   bash install.sh                 # install into every detected client
-#   bash install.sh --target claude # only one of: claude | cursor | hermes | agents | all
+#   bash install.sh --target claude # only one of: claude | cursor | hermes | agents | trae | qoder | all
 #   bash install.sh --uninstall     # remove the links/panel again
 
 set -euo pipefail
@@ -23,7 +23,7 @@ UNINSTALL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --target)
-      TARGET="${2:?--target requires a value: claude|cursor|hermes|agents|all}"
+      TARGET="${2:?--target requires a value: claude|cursor|hermes|agents|trae|qoder|all}"
       shift 2
       ;;
     --target=*)
@@ -135,6 +135,9 @@ if [ "$UNINSTALL" -eq 1 ]; then
   want claude && unlink_skill "$HOME/.claude/skills" "claude"
   want cursor && unlink_skill "$HOME/.cursor/skills" "cursor"
   want agents && unlink_skill "$HOME/.agents/skills" "agents"
+  want trae && unlink_skill "$HOME/.trae/skills" "trae"
+  want trae && unlink_skill "$HOME/.trae-cn/skills" "trae-cn"
+  want qoder && unlink_skill "$HOME/.qoder/skills" "qoder"
   if want hermes; then
     unlink_skill "$HOME/.hermes/skills" "hermes"
     uninstall_hermes_panel
@@ -169,6 +172,31 @@ if want agents; then
   link_skill "$HOME/.agents/skills" "agents (shared)"
 fi
 
+if want trae; then
+  if [ -d "$HOME/.trae" ]; then
+    detected_any=1
+    link_skill "$HOME/.trae/skills" "trae"
+  else
+    skip "trae: ~/.trae not found"
+  fi
+  if [ -d "$HOME/.trae-cn" ]; then
+    detected_any=1
+    link_skill "$HOME/.trae-cn/skills" "trae-cn"
+  else
+    skip "trae-cn: ~/.trae-cn not found"
+  fi
+fi
+
+if want qoder; then
+  if [ -d "$HOME/.qoder" ]; then
+    detected_any=1
+    link_skill "$HOME/.qoder/skills" "qoder"
+    log "  qoder: tip - you can also import this repo as a local plugin (root .qoder-plugin/plugin.json)"
+  else
+    skip "qoder: ~/.qoder not found"
+  fi
+fi
+
 if want hermes; then
   if [ -d "$HOME/.hermes" ]; then
     detected_any=1
@@ -180,11 +208,12 @@ if want hermes; then
 fi
 
 if [ "$detected_any" -eq 0 ]; then
-  log "No supported client directory detected. Install Claude Code, Cursor, or Hermes first,"
+  log "No supported client directory detected. Install Claude Code, Cursor, Hermes, Trae, or Qoder first,"
   log "or link manually: ln -sfn \"$SKILL_SOURCE\" <client-skills-dir>/$SKILL_NAME"
 fi
 
 log ""
-log "Next step: configure your 88API image-generation group key:"
+log "Next step: configure base_url (optional) and your 88API image-generation group key:"
+log "  node \"$REPO_ROOT/plugins/88api-image-gen/scripts/generate.mjs\" --set-api-root \"<YOUR_BASE_URL>\"   # optional; default https://88api.ai"
 log "  node \"$REPO_ROOT/plugins/88api-image-gen/scripts/generate.mjs\" --set-key \"<YOUR_88API_IMAGE_GROUP_KEY>\""
 log "  node \"$REPO_ROOT/plugins/88api-image-gen/scripts/generate.mjs\" --get-config"

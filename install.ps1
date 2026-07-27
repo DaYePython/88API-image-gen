@@ -9,11 +9,11 @@
 #   powershell -ExecutionPolicy Bypass -File install.ps1 -Target claude
 #   powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 #
-# Targets: claude | cursor | hermes | agents | all (default: all)
+# Targets: claude | cursor | hermes | agents | trae | qoder | all (default: all)
 
 [CmdletBinding()]
 param(
-    [ValidateSet("claude", "cursor", "hermes", "agents", "all")]
+    [ValidateSet("claude", "cursor", "hermes", "agents", "trae", "qoder", "all")]
     [string]$Target = "all",
     [switch]$Uninstall
 )
@@ -90,6 +90,11 @@ if ($Uninstall) {
     if (Test-Want "claude") { Unlink-Skill (Join-Path $HomeDir ".claude\skills") "claude" }
     if (Test-Want "cursor") { Unlink-Skill (Join-Path $HomeDir ".cursor\skills") "cursor" }
     if (Test-Want "agents") { Unlink-Skill (Join-Path $HomeDir ".agents\skills") "agents" }
+    if (Test-Want "trae") {
+        Unlink-Skill (Join-Path $HomeDir ".trae\skills") "trae"
+        Unlink-Skill (Join-Path $HomeDir ".trae-cn\skills") "trae-cn"
+    }
+    if (Test-Want "qoder") { Unlink-Skill (Join-Path $HomeDir ".qoder\skills") "qoder" }
     if (Test-Want "hermes") {
         Unlink-Skill (Join-Path $HomeDir ".hermes\skills") "hermes"
         Uninstall-HermesPanel
@@ -139,6 +144,31 @@ if (Test-Want "agents") {
     Link-Skill (Join-Path $HomeDir ".agents\skills") "agents (shared)"
 }
 
+if (Test-Want "trae") {
+    if (Test-Path (Join-Path $HomeDir ".trae")) {
+        $detectedAny = $true
+        Link-Skill (Join-Path $HomeDir ".trae\skills") "trae"
+    } else {
+        Write-Skip "trae: ~/.trae not found"
+    }
+    if (Test-Path (Join-Path $HomeDir ".trae-cn")) {
+        $detectedAny = $true
+        Link-Skill (Join-Path $HomeDir ".trae-cn\skills") "trae-cn"
+    } else {
+        Write-Skip "trae-cn: ~/.trae-cn not found"
+    }
+}
+
+if (Test-Want "qoder") {
+    if (Test-Path (Join-Path $HomeDir ".qoder")) {
+        $detectedAny = $true
+        Link-Skill (Join-Path $HomeDir ".qoder\skills") "qoder"
+        Write-Host "  qoder: tip - you can also import this repo as a local plugin (root .qoder-plugin/plugin.json)"
+    } else {
+        Write-Skip "qoder: ~/.qoder not found"
+    }
+}
+
 if (Test-Want "hermes") {
     if (Test-Path (Join-Path $HomeDir ".hermes")) {
         $detectedAny = $true
@@ -150,11 +180,12 @@ if (Test-Want "hermes") {
 }
 
 if (-not $detectedAny) {
-    Write-Host "No supported client directory detected. Install Claude Code, Cursor, or Hermes first,"
+    Write-Host "No supported client directory detected. Install Claude Code, Cursor, Hermes, Trae, or Qoder first,"
     Write-Host "or link manually: New-Item -ItemType Junction -Path <client-skills-dir>\$SkillName -Value `"$SkillSource`""
 }
 
 Write-Host ""
-Write-Host "Next step: configure your 88API image-generation group key:"
+Write-Host "Next step: configure base_url (optional) and your 88API image-generation group key:"
+Write-Host "  node `"$RepoRoot\plugins\88api-image-gen\scripts\generate.mjs`" --set-api-root `"<YOUR_BASE_URL>`"   # optional; default https://88api.ai"
 Write-Host "  node `"$RepoRoot\plugins\88api-image-gen\scripts\generate.mjs`" --set-key `"<YOUR_88API_IMAGE_GROUP_KEY>`""
 Write-Host "  node `"$RepoRoot\plugins\88api-image-gen\scripts\generate.mjs`" --get-config"

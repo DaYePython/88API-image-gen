@@ -1,7 +1,7 @@
 ---
 name: "88api-image-gen"
 description: "Generate or edit images with the 88api.ai Token aggregation service via the gpt-image-2 Images API. Trigger for AI image generation, text-to-image, multi-reference image editing, batch or multi-worker generation, continuous generation, or saving generated images to disk."
-version: "0.5.0"
+version: "0.6.0"
 platforms: [linux, macos, windows]
 metadata:
   hermes:
@@ -12,21 +12,25 @@ metadata:
 
 # 88API-image-gen
 
-Image generation and editing plugin from the 88api.ai Token aggregation service, usable from Codex, Claude Code, Cursor, and Hermes. It only calls `gpt-image-2` through `/v1/images/generations` and `/v1/images/edits`; no GPT text model permission is required. A single text-to-image task can opt into native Images API partial-image SSE previews.
+Image generation and editing plugin from the 88api.ai Token aggregation service, usable from Codex, Claude Code, Cursor, Hermes, Trae, and Qoder. It only calls `gpt-image-2` through `/v1/images/generations` and `/v1/images/edits`; no GPT text model permission is required. A single text-to-image task can opt into native Images API partial-image SSE previews.
 
 ## Script Location
 
 The core script is `generate.mjs`, shipped once in this repository. Resolve it at runtime with this rule, in order:
 
 1. Environment override: `88API_IMAGE_GEN_SCRIPT` (absolute path to `generate.mjs`)
-2. Repository layout: `<SKILL_DIR>/../../plugins/88api-image-gen/scripts/generate.mjs` where `<SKILL_DIR>` is the directory containing this SKILL.md after symlink resolution
-3. Legacy Codex plugin install: `$HOME/plugins/88api-image-gen/scripts/generate.mjs`
+2. Qoder plugin root (when set): `$QODER_PLUGIN_ROOT/plugins/88api-image-gen/scripts/generate.mjs`
+3. Repository layout: `<SKILL_DIR>/../../plugins/88api-image-gen/scripts/generate.mjs` where `<SKILL_DIR>` is the directory containing this SKILL.md after symlink resolution
+4. Legacy Codex plugin install: `$HOME/plugins/88api-image-gen/scripts/generate.mjs`
 
 In shell form (POSIX):
 
 ```bash
 SCRIPT="${88API_IMAGE_GEN_SCRIPT:-}"
-if [ -z "$SCRIPT" ]; then
+if [ -z "$SCRIPT" ] && [ -n "${QODER_PLUGIN_ROOT:-}" ]; then
+  SCRIPT="$QODER_PLUGIN_ROOT/plugins/88api-image-gen/scripts/generate.mjs"
+fi
+if [ -z "$SCRIPT" ] || [ ! -f "$SCRIPT" ]; then
   SKILL_DIR="$(cd "$(dirname "$0")" && pwd -P)"   # resolve symlinks when running from ~/.claude/skills etc.
   SCRIPT="$SKILL_DIR/../../plugins/88api-image-gen/scripts/generate.mjs"
 fi
@@ -41,10 +45,14 @@ When the agent resolves the path itself (no `$0`), prefer: realpath of this skil
 When helping a user install this plugin from its repository, perform this onboarding sequence in order:
 
 1. Check `node --version`. Require Node.js 18 or newer; recommend Node.js 20+. Python is not required.
-2. Install for the user's client (see repository README): Codex uses `codex plugin marketplace add DaYePython/88API-image-gen`; Claude Code uses `/plugin marketplace add DaYePython/88API-image-gen`; Cursor and Hermes use `install.sh` / `install.ps1` or a manual skill symlink.
+2. Install for the user's client (see repository README): Codex uses `codex plugin marketplace add DaYePython/88API-image-gen`; Claude Code uses `/plugin marketplace add DaYePython/88API-image-gen`; Cursor / Hermes / Trae / Qoder use `install.sh` / `install.ps1` or a manual skill symlink. Qoder may also import the repo root via `.qoder-plugin/plugin.json`.
 3. Check the local resize backend: PowerShell/System.Drawing on Windows, built-in `sips` on macOS, or ImageMagick (`magick`/`convert`) on Linux/Unix.
 4. Run the configuration check below.
-5. If no key is configured, stop before generation and tell the user to visit `https://88api.ai/`, sign in, and create an **image-generation group key**. Then help the user save it locally with `--set-key`.
+5. Configure credentials the user supplies. Users may say "base_url" for the API root:
+   - API root / base_url → `node "$GEN" --set-api-root "<base_url>"` (default `https://88api.ai` if omitted)
+   - Key → `node "$GEN" --set-key "<key>"`
+   If the user already provides both values in the install request, save them immediately after install checks. Never invent a base_url or key.
+6. If no key is configured and the user did not supply one, stop before generation and tell the user to visit `https://88api.ai/`, sign in, and create an **image-generation group key**. Then help the user save it locally with `--set-key`.
 
 Every time this skill is triggered for generation, run:
 
@@ -62,12 +70,17 @@ node "$GEN" --set-key "<YOUR_88API_IMAGE_GROUP_KEY>"
 
 `<YOUR_88API_IMAGE_GROUP_KEY>` is a placeholder and must be replaced with the real key created by the user at 88api.ai. Never write the real key into repository files, documentation, commits, logs, or the assistant response. Prefer letting the user enter it directly in their local terminal; if the user explicitly supplies it for configuration, do not echo it back.
 
-- Optional API root (same config file as the key). Default is `https://88api.ai`. When the user needs a compatible reverse proxy, mirror, or self-hosted gateway, save a full `http://` or `https://` URL with:
+- API root / base_url (same config file as the key). Default is `https://88api.ai`. Users may call this `base_url`, `API base`, or gateway URL. When the user provides one, save a full `http://` or `https://` URL with:
 
 ```bash
-node "$GEN" --set-api-root "https://your-gateway.example"
+node "$GEN" --set-api-root "<YOUR_BASE_URL>"
+node "$GEN" --set-key "<YOUR_88API_IMAGE_GROUP_KEY>"
 node "$GEN" --get-config
 ```
+
+Recommended one-shot onboarding prompt for AI clients:
+
+> 安装 https://github.com/DaYePython/88API-image-gen 仓库中的 88api-image-gen 插件，检查 Node.js 和本地图片处理环境；配置生图模型 base_url 为 <你的base_url>，key 为 <你的key>
 
 `--set-api-root` validation rules:
 

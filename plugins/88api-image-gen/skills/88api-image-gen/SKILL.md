@@ -27,7 +27,11 @@ When helping a user install this plugin from its repository, perform this onboar
 2. Install the repository marketplace and `88api-image-gen@88api-plugins` using the repository README commands.
 3. Check the local resize backend: PowerShell/System.Drawing on Windows, built-in `sips` on macOS, or ImageMagick (`magick`/`convert`) on Linux/Unix.
 4. Run the configuration check below.
-5. If no key is configured, stop before generation and tell the user to visit `https://88api.ai/`, sign in, and create an **image-generation group key**. Then help the user save it locally with `--set-key`.
+5. Configure credentials the user supplies. Users may say "base_url" for the API root:
+   - API root / base_url → `--set-api-root "<base_url>"` (default `https://88api.ai` if omitted)
+   - Key → `--set-key "<key>"`
+   If the user already provides both values in the install request, save them immediately after install checks. Never invent a base_url or key.
+6. If no key is configured and the user did not supply one, stop before generation and tell the user to visit `https://88api.ai/`, sign in, and create an **image-generation group key**. Then help the user save it locally with `--set-key`.
 
 Every time this skill is triggered for generation, run:
 
@@ -45,10 +49,11 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --set-key "<YOUR_88API
 
 `<YOUR_88API_IMAGE_GROUP_KEY>` is a placeholder and must be replaced with the real key created by the user at 88api.ai. Never write the real key into repository files, documentation, commits, logs, or the assistant response. Prefer letting the user enter it directly in their local terminal; if the user explicitly supplies it for configuration, do not echo it back.
 
-- Optional API root (same config file as the key). Default is `https://88api.ai`. When the user needs a compatible reverse proxy, mirror, or self-hosted gateway, save a full `http://` or `https://` URL with:
+- API root / base_url (same config file as the key). Users may call this `base_url`. Default is `https://88api.ai`. When the user needs a compatible reverse proxy, mirror, or self-hosted gateway, save a full `http://` or `https://` URL with:
 
 ```bash
-node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --set-api-root "https://your-gateway.example"
+node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --set-api-root "<YOUR_BASE_URL>"
+node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --set-key "<YOUR_88API_IMAGE_GROUP_KEY>"
 node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
 ```
 
@@ -61,6 +66,10 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
 - `--get-config` reports `API根地址`, `API根地址来源` (`默认` or `自定义`), `文生图接口`, and `图生图接口`
 
 Do not invent a custom API root. Only set it when the user explicitly provides a gateway URL.
+
+Recommended one-shot onboarding prompt:
+
+> 安装 https://github.com/DaYePython/88API-image-gen 仓库中的 88api-image-gen 插件，检查 Node.js 和本地图片处理环境；配置生图模型 base_url 为 <你的base_url>，key 为 <你的key>
 
 - If the user wants multiple independent 88API workers, add more keys with:
 
