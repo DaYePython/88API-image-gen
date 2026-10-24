@@ -18,7 +18,7 @@ const ASPECTS = ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '2:1', '1:2'
 
 const SCRIPT_HINT = 'plugins/88api-image-gen/scripts/generate.mjs'
 
-function buildCommand({ mode, prompt, aspect, preview, count, images }) {
+function buildCommand({ mode, prompt, aspect, preview, count, images, model }) {
   const parts = ['node', `"$GEN"`]
   if (mode === 'edit') {
     parts.push('--edit')
@@ -28,6 +28,8 @@ function buildCommand({ mode, prompt, aspect, preview, count, images }) {
     }
   }
   parts.push('--prompt', `"${prompt.replace(/"/g, '\\"')}"`)
+  const trimmedModel = String(model || '').trim()
+  if (trimmedModel) parts.push('--model', `"${trimmedModel.replace(/"/g, '\\"')}"`)
   if (aspect) parts.push('--aspect', aspect)
   if (mode === 'generate' && preview) parts.push('--preview')
   if (mode === 'generate' && count > 1) parts.push('--count', String(count), '--concurrency', '1')
@@ -47,13 +49,14 @@ function Field({ label, children }) {
 function ImageGenPane() {
   const [mode, setMode] = useState('generate')
   const [prompt, setPrompt] = useState('')
+  const [model, setModel] = useState('')
   const [aspect, setAspect] = useState('1:1')
   const [preview, setPreview] = useState(false)
   const [count, setCount] = useState(1)
   const [imagesText, setImagesText] = useState('')
 
   const images = imagesText.split('\n')
-  const command = buildCommand({ mode, prompt: prompt || '<PROMPT>', aspect, preview, count, images })
+  const command = buildCommand({ mode, prompt: prompt || '<PROMPT>', aspect, preview, count, images, model })
 
   return jsxs('div', {
     className: 'flex h-full flex-col gap-3 overflow-auto p-3 text-sm',
@@ -105,6 +108,15 @@ function ImageGenPane() {
           onChange: (event) => setPrompt(event.target.value),
           rows: 4,
           placeholder: 'Describe the image you want...'
+        })
+      }),
+
+      jsx(Field, {
+        label: 'Model (optional)',
+        children: jsx(Input, {
+          value: model,
+          onChange: (event) => setModel(event.target.value),
+          placeholder: 'gpt-image-2 (default), gpt-image-2.5-flare, gpt-image-2.5-sunburst...'
         })
       }),
 
