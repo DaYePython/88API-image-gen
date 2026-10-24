@@ -1,6 +1,6 @@
 ---
 name: "88api-image-gen"
-description: "Generate or edit images with the 88api.ai Token aggregation service via the gpt-image-2 Images API. Trigger for AI image generation, text-to-image, multi-reference image editing, batch or multi-worker generation, continuous generation, or saving generated images to disk."
+description: "Generate or edit images with the 88api.ai Token aggregation service via the Images API, using a configurable model (default gpt-image-2). Trigger for AI image generation, text-to-image, multi-reference image editing, batch or multi-worker generation, continuous generation, or saving generated images to disk."
 version: "0.6.0"
 platforms: [linux, macos, windows]
 metadata:
@@ -12,7 +12,7 @@ metadata:
 
 # 88API-image-gen
 
-Image generation and editing plugin from the 88api.ai Token aggregation service, usable from Codex, Claude Code, Cursor, Hermes, Trae, and Qoder. It only calls `gpt-image-2` through `/v1/images/generations` and `/v1/images/edits`; no GPT text model permission is required. A single text-to-image task can opt into native Images API partial-image SSE previews.
+Image generation and editing plugin from the 88api.ai Token aggregation service, usable from Codex, Claude Code, Cursor, Hermes, Trae, and Qoder. It calls the configured image model (default `gpt-image-2`, customizable to names such as `gpt-image-2.5-flare` or `gpt-image-2.5-sunburst`) through `/v1/images/generations` and `/v1/images/edits`; no GPT text model permission is required. A single text-to-image task can opt into native Images API partial-image SSE previews.
 
 ## Script Location
 
@@ -48,10 +48,11 @@ When helping a user install this plugin from its repository, perform this onboar
 2. Install for the user's client (see repository README): Codex uses `codex plugin marketplace add DaYePython/88API-image-gen`; Claude Code uses `/plugin marketplace add DaYePython/88API-image-gen`; Cursor / Hermes / Trae / Qoder use `install.sh` / `install.ps1` or a manual skill symlink. Qoder may also import the repo root via `.qoder-plugin/plugin.json`.
 3. Check the local resize backend: PowerShell/System.Drawing on Windows, built-in `sips` on macOS, or ImageMagick (`magick`/`convert`) on Linux/Unix.
 4. Run the configuration check below.
-5. Configure credentials the user supplies. Users may say "base_url" for the API root:
+5. Configure credentials and model the user supplies. Users may say "base_url" for the API root:
    - API root / base_url → `node "$GEN" --set-api-root "<base_url>"` (default `https://88api.ai` if omitted)
    - Key → `node "$GEN" --set-key "<key>"`
-   If the user already provides both values in the install request, save them immediately after install checks. Never invent a base_url or key.
+   - Model → `node "$GEN" --set-model "<model>"` (default `gpt-image-2`; free-form, e.g. `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`)
+   If the user already provides these values in the install request, save them immediately after install checks. Never invent a base_url, key, or model.
 6. If no key is configured and the user did not supply one, stop before generation and tell the user to visit `https://88api.ai/`, sign in, and create an **image-generation group key**. Then help the user save it locally with `--set-key`.
 
 Every time this skill is triggered for generation, run:
@@ -87,10 +88,20 @@ Recommended one-shot onboarding prompt for AI clients:
 - Value must parse as a complete URL with `http:` or `https:` only
 - Reject credentials in the URL, query strings, and hash fragments
 - Trailing slashes are stripped; a path prefix is allowed, e.g. `https://host.example/v1-proxy`
+- A trailing `/v1` is accepted and not duplicated: both `https://host.example` and `https://host.example/v1` call `{host}/v1/images/generations` and `{host}/v1/images/edits`
 - Endpoints become `{API根地址}/v1/images/generations` and `{API根地址}/v1/images/edits`
 - `--get-config` reports `API根地址`, `API根地址来源` (`默认` or `自定义`), `文生图接口`, and `图生图接口`
 
 Do not invent a custom API root. Only set it when the user explicitly provides a gateway URL.
+
+Image model (same config file). Default is `gpt-image-2`. When the gateway exposes a different compatible Images model, save it with:
+
+```bash
+node "$GEN" --set-model "gpt-image-2.5-sunburst"
+node "$GEN" --get-config
+```
+
+Supported example names include `gpt-image-2`, `gpt-image-2.5-flare`, and `gpt-image-2.5-sunburst`; the value is passed verbatim as the Images API `model`. Use `--model "<name>"` to override the configured model for a single run without changing the saved config. Do not guess a model name the user or gateway did not provide.
 
 - If the user wants multiple independent 88API workers, add more keys with:
 
@@ -111,9 +122,9 @@ Critical billing and stability warning:
 
 ## Prompt Compiler and Orchestration
 
-The model running this skill is the prompt planner. Prepare the final Image2 instruction from the current conversation without sending prompt planning to a separate external model.
+The model running this skill is the prompt planner. Prepare the final Images API instruction from the current conversation without sending prompt planning to a separate external model.
 
-Before a paid image request, turn the user's request and conversation context into one clear Image2 instruction:
+Before a paid image request, turn the user's request and conversation context into one clear Images API instruction:
 
 - Preserve the user's intent, named people, brands, exact quoted text, numbers, required objects, and prohibitions.
 - For reference images, state the role of each image in argument order: identity, product, composition, style, background, or other user-defined role.
@@ -337,10 +348,10 @@ Use `--dry-run` first to verify product selection and total task count without c
 
 ## API Contract
 
-- API root: configurable with `--set-api-root <http(s) URL>`; default `https://88api.ai`; stored as `apiRoot` in `~/.agents/88api-image-gen-config.json` (legacy `~/.codex/88api-image-gen-config.json` is migrated automatically on first load)
+- API root: configurable with `--set-api-root <http(s) URL>`; default `https://88api.ai`; stored as `apiRoot` in `~/.agents/88api-image-gen-config.json` (legacy `~/.codex/88api-image-gen-config.json` is migrated automatically on first load); a trailing `/v1` is accepted
 - Text-to-image: `POST {API_ROOT}/v1/images/generations`
 - Image edit: `POST {API_ROOT}/v1/images/edits`
-- Model: always `gpt-image-2`; GPT text-model permission is not required
+- Model: configurable with `--set-model <name>` (persisted) or `--model <name>` (single run); default `gpt-image-2`; stored as `model` in the same config file; GPT text-model permission is not required
 - Request size policy: always use the fixed 2K preset matrix and the supported aspect list above; do not request 1K, 4K, disabled ratios, or arbitrary `--size`
 - Auth: `Authorization: Bearer <88API Key>`
 - Images generation body: JSON with `model`, `prompt`, `size`, and `n:1`

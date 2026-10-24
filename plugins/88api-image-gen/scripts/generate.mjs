@@ -6,7 +6,7 @@ import { homedir, tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
 const DEFAULT_API_ROOT = "https://88api.ai";
-const IMAGE_MODEL = "gpt-image-2";
+const DEFAULT_IMAGE_MODEL = "gpt-image-2";
 const DEFAULT_TRANSPORT = "images";
 const TRANSPORTS = new Set(["auto", "images"]);
 const CONFIG_PATH = join(homedir(), ".agents", "88api-image-gen-config.json");
@@ -19,6 +19,8 @@ const LEGACY_CONFIG_PATHS = [
 
 /** Resolved at runtime from config (`apiRoot`) or DEFAULT_API_ROOT. */
 let activeApiRoot = DEFAULT_API_ROOT;
+/** Resolved at runtime from config (`model`), CLI `--model`, or DEFAULT_IMAGE_MODEL. */
+let activeImageModel = DEFAULT_IMAGE_MODEL;
 
 function normalizeApiRoot(value, options = {}) {
   const allowEmpty = options.allowEmpty === true;
@@ -70,12 +72,47 @@ function getApiRoot() {
   return activeApiRoot || DEFAULT_API_ROOT;
 }
 
+function normalizeImageModel(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (raw.length > 200) {
+    throw new Error("Image model name must be 200 characters or fewer.");
+  }
+  if (/[\s\x00-\x1f\x7f]/.test(raw)) {
+    throw new Error(`Invalid image model name: "${raw}". Model names must not contain whitespace or control characters.`);
+  }
+  return raw;
+}
+
+function resolveImageModel(config) {
+  try {
+    return normalizeImageModel(config?.model) || DEFAULT_IMAGE_MODEL;
+  } catch (error) {
+    console.warn(`WARNING: Invalid stored model ignored; using default ${DEFAULT_IMAGE_MODEL}. ${error?.message || String(error)}`);
+    return DEFAULT_IMAGE_MODEL;
+  }
+}
+
+function setActiveModel(model) {
+  activeImageModel = normalizeImageModel(model) || DEFAULT_IMAGE_MODEL;
+  return activeImageModel;
+}
+
+function getImageModel() {
+  return activeImageModel || DEFAULT_IMAGE_MODEL;
+}
+
+function getImagesApiBase(apiRoot = getApiRoot()) {
+  const root = String(apiRoot || DEFAULT_API_ROOT).replace(/\/+$/, "");
+  return /\/v1$/i.test(root) ? root : `${root}/v1`;
+}
+
 function getImagesGenerationsUrl(apiRoot = getApiRoot()) {
-  return `${apiRoot}/v1/images/generations`;
+  return `${getImagesApiBase(apiRoot)}/images/generations`;
 }
 
 function getImagesEditsUrl(apiRoot = getApiRoot()) {
-  return `${apiRoot}/v1/images/edits`;
+  return `${getImagesApiBase(apiRoot)}/images/edits`;
 }
 
 const MAX_GENERATION_COUNT = 9;
@@ -327,6 +364,27 @@ function normalizeConfigShape(config) {
     }
   }
 
+  if ("model" in source) {
+    const rawModel = String(source.model || "").trim();
+    if (!rawModel) {
+      delete normalized.model;
+      changed = true;
+    } else {
+      try {
+        const normalizedModel = normalizeImageModel(rawModel);
+        if (normalizedModel !== source.model) {
+          normalized.model = normalizedModel;
+          changed = true;
+        } else {
+          normalized.model = normalizedModel;
+        }
+      } catch {
+        delete normalized.model;
+        changed = true;
+      }
+    }
+  }
+
   return { config: normalized, changed };
 }
 
@@ -430,6 +488,8 @@ function buildConfigSummary(config) {
   const enabledWorkers = workers.filter((worker) => worker.enabled !== false);
   const apiRoot = resolveApiRoot(config);
   const customApiRoot = Boolean(String(config?.apiRoot || "").trim());
+  const imageModel = resolveImageModel(config);
+  const customModel = Boolean(String(config?.model || "").trim());
   return {
     密钥状态: workers.length > 0 ? "已配置" : "未配置",
     密钥预览: workers.length === 1 ? previewKey(workers[0].apiKey) : null,
@@ -441,7 +501,9 @@ function buildConfigSummary(config) {
     API根地址来源: customApiRoot ? "自定义" : "默认",
     文生图接口: getImagesGenerationsUrl(apiRoot),
     图生图接口: getImagesEditsUrl(apiRoot),
-    默认传输: "Images API（仅使用 gpt-image-2）",
+    生图模型: imageModel,
+    生图模型来源: customModel ? "自定义" : "默认",
+    默认传输: "Images API",
     密钥列表: workers.map(summarizeWorker),
     快速模式: config?.quickMode || null,
     批量模式: config?.batchMode || null,
@@ -473,7 +535,7 @@ function resolveRunTransport(value) {
   const requested = normalizeTransport(value);
   if (!TRANSPORTS.has(requested)) {
     if (requested === "responses") {
-      throw new Error("Responses transport is disabled: image-generation group keys use the gpt-image-2 Images API only.");
+      throw new Error("Responses transport is disabled: image generation uses the Images API only.");
     }
     throw new Error(`Invalid transport="${value}". Use auto or images.`);
   }
@@ -1075,7 +1137,7 @@ function imageApiPrompt(prompt, size) {
 
 function buildImagesGenerationBody(prompt, size, options = {}) {
   const body = {
-    model: IMAGE_MODEL,
+    model: getImageModel(),
     prompt: imageApiPrompt(prompt, size),
     size,
     n: 1,
@@ -1089,7 +1151,7 @@ function buildImagesGenerationBody(prompt, size, options = {}) {
 
 function buildImagesEditForm(prompt, size, sources) {
   const form = new FormData();
-  form.append("model", IMAGE_MODEL);
+  form.append("model", getImageModel());
   form.append("prompt", imageApiPrompt(prompt, size));
   form.append("size", size);
   form.append("n", "1");
@@ -1121,7 +1183,7 @@ function imageApiLogSummary(data) {
   const items = Array.isArray(data?.data) ? data.data : [];
   return {
     created: data?.created ?? null,
-    model: data?.model || IMAGE_MODEL,
+    model: data?.model || getImageModel(),
     usage: data?.usage || null,
     images: items.map((item, index) => {
       const base64 = item?.b64_json || item?.base64 || item?.image?.b64_json || "";
@@ -1233,7 +1295,7 @@ async function consumeImageApiStream(res, options = {}) {
 function imageStreamLogSummary(result, size) {
   return {
     transport: "images-stream",
-    model: IMAGE_MODEL,
+    model: getImageModel(),
     size,
     partialImageEvents: result.partialImageEvents || 0,
     eventCounts: result.eventCounts || {},
@@ -3047,16 +3109,28 @@ async function runImagesApiSelfTest() {
   const form = buildImagesEditForm("mock edit prompt", "1152x2048", sources);
   const entries = [...form.entries()];
   const imageEntries = entries.filter(([key]) => key === "image[]");
-  const payloadOk = generation.model === IMAGE_MODEL
+  const defaultModel = getImageModel();
+  const customModel = "gpt-image-2.5-sunburst";
+  setActiveModel(customModel);
+  const customGeneration = buildImagesGenerationBody("mock custom model prompt", "1024x1024");
+  const customForm = buildImagesEditForm("mock custom model prompt", "1024x1024", sources.slice(0, 1));
+  setActiveModel(defaultModel);
+  const payloadOk = generation.model === defaultModel
     && generation.n === 1
     && generation.size === "1152x2048"
     && generation.prompt.includes("mock generation prompt")
-    && form.get("model") === IMAGE_MODEL
+    && form.get("model") === defaultModel
     && form.get("size") === "1152x2048"
     && form.get("n") === "1"
     && String(form.get("prompt")).includes("mock edit prompt")
     && imageEntries.length === 2
     && imageEntries.every(([, value]) => value instanceof Blob);
+  const modelOk = customGeneration.model === customModel
+    && customForm.get("model") === customModel;
+  const urlOk = getImagesGenerationsUrl("https://gateway.example") === "https://gateway.example/v1/images/generations"
+    && getImagesGenerationsUrl("https://gateway.example/v1") === "https://gateway.example/v1/images/generations"
+    && getImagesEditsUrl("https://gateway.example/v1/") === "https://gateway.example/v1/images/edits"
+    && getImagesEditsUrl("https://gateway.example/proxy") === "https://gateway.example/proxy/v1/images/edits";
 
   const pngB64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
   const [base64] = extractImagesFromImageApi({ data: [{ b64_json: pngB64 }] });
@@ -3070,10 +3144,12 @@ async function runImagesApiSelfTest() {
     && !logText.includes(pngB64)
     && !logText.includes("signed.example");
 
-  if (!payloadOk || !savedOk || !logOk) {
+  if (!payloadOk || !modelOk || !urlOk || !savedOk || !logOk) {
     console.error("Images API self-test FAILED.");
     console.error(JSON.stringify({
       payloadOk,
+      modelOk,
+      urlOk,
       savedOk,
       logOk,
       saved,
@@ -3099,7 +3175,7 @@ async function runImageStreamSelfTest() {
   const parsed = await consumeImageApiStream(new Response(sse, {
     headers: { "Content-Type": "text/event-stream" },
   }), { preview: false });
-  const payloadOk = body.model === IMAGE_MODEL
+  const payloadOk = body.model === getImageModel()
     && body.stream === true
     && body.partial_images === 1
     && body.n === 1
@@ -3118,7 +3194,9 @@ async function runImageStreamSelfTest() {
     && responsesRejected
     && isRetryableError("[NO-RETRY] Images API stream timed out") === false
     && parseArgs(["--prompt", "mock", "--transport", "images", "--preview"]).flags.transport === "images"
-    && parseArgs(["--prompt", "mock", "--transport", "images", "--preview"]).flags.preview === true;
+    && parseArgs(["--prompt", "mock", "--transport", "images", "--preview"]).flags.preview === true
+    && parseArgs(["--prompt", "mock", "--model", "gpt-image-2.5-flare"]).flags.model === "gpt-image-2.5-flare"
+    && parseArgs(["--set-model", "gpt-image-2.5-sunburst"]).flags.setModel === "gpt-image-2.5-sunburst";
   if (!payloadOk || !streamOk || !safetyOk) {
     console.error("Images API stream self-test FAILED.");
     console.error(JSON.stringify({ payloadOk, streamOk, safetyOk, parsed: imageStreamLogSummary(parsed, "1152x2048") }, null, 2));
@@ -3137,6 +3215,7 @@ function parseArgs(argv) {
     else if (value === "--list-workers") args.flags.listWorkers = true;
     else if (value === "--set-key" && argv[i + 1]) args.flags.setKey = argv[++i];
     else if (value === "--set-api-root" && argv[i + 1]) args.flags.setApiRoot = argv[++i];
+    else if (value === "--set-model" && argv[i + 1]) args.flags.setModel = argv[++i];
     else if (value === "--add-worker-key" && argv[i + 1]) args.flags.addWorkerKey = argv[++i];
     else if (value === "--worker-name" && argv[i + 1]) args.flags.workerName = argv[++i];
     else if (value === "--set-worker-key" && argv[i + 2]) {
@@ -3156,6 +3235,7 @@ function parseArgs(argv) {
     else if (value === "--limit" && argv[i + 1]) args.flags.limit = Number.parseInt(argv[++i], 10);
     else if (value === "--output-dir" && argv[i + 1]) args.flags.outputDir = argv[++i];
     else if (value === "--concurrency" && argv[i + 1]) args.flags.concurrency = Number.parseInt(argv[++i], 10);
+    else if (value === "--model" && argv[i + 1]) args.flags.model = argv[++i];
     else if (value === "--transport" && argv[i + 1]) args.flags.transport = argv[++i];
     else if (value === "--responses") args.flags.transport = "responses";
     else if (value === "--images-api") args.flags.transport = "images";
@@ -3223,7 +3303,8 @@ CONFIG
   --get-config
   --list-workers
   --set-key <YOUR_88API_IMAGE_GROUP_KEY>
-  --set-api-root <https://host.example>    full http(s) URL; default ${DEFAULT_API_ROOT}
+  --set-api-root <https://host.example>    full http(s) URL, optional /v1 suffix; default ${DEFAULT_API_ROOT}
+  --set-model <MODEL>                      image model name; default ${DEFAULT_IMAGE_MODEL}
   --add-worker-key <ANOTHER_88API_IMAGE_GROUP_KEY> [--worker-name <name>]
   --set-worker-key <worker> <key>
   --remove-worker <worker>
@@ -3236,11 +3317,12 @@ FIRST USE
   runtime: Node.js 18+ (Python is not required)
   create one or more image-generation group keys at https://88api.ai/
   optional: --set-api-root when using a compatible reverse proxy or mirror (must be a valid http(s) URL)
+  optional: --set-model when the gateway requires a different image model; default ${DEFAULT_IMAGE_MODEL}
   recommended: one key/worker; add distinct keys only for concurrent independent images
   maximum: ${MAX_WORKERS} workers; multiple workers can use substantial memory and are not recommended on low-spec computers
 
 GENERATE
-  --prompt "..." [--ratio R|--aspect R] [--count 1..${MAX_GENERATION_COUNT}] [--transport auto|images] [--preview|--no-preview] [--no-resize]
+  --prompt "..." [--ratio R|--aspect R] [--count 1..${MAX_GENERATION_COUNT}] [--model <name>] [--transport auto|images] [--preview|--no-preview] [--no-resize]
   --prompt "..." --repeat 1..${MAX_REPEAT} [--concurrency 1..${MAX_CONCURRENCY}] [--adaptive|--no-adaptive]
   --batch prompts.json [--ratio R|--aspect R] [--concurrency N] [--no-resize]
   --batch-inline "prompt 1" "prompt 2" ... [--ratio R|--aspect R] [--concurrency N] [--no-resize]
@@ -3252,8 +3334,9 @@ EDIT
   all edits use Images API multipart image[] uploads
 
 TRANSPORT
-  --transport auto       use the gpt-image-2 Images API
+  --transport auto       use the configured image model through the Images API
   --transport images     force /v1/images/generations or /v1/images/edits
+  --model <name>         override the configured image model for this run
   --preview               stream and save a real partial-image preview for one Images generation task
   --no-preview            wait for the final image without saving a preview
 
@@ -3278,8 +3361,8 @@ DEFAULTS
   API root: ${apiRoot} (default ${DEFAULT_API_ROOT}; configure with --set-api-root)
   generation endpoint: ${getImagesGenerationsUrl(apiRoot)}
   edit endpoint: ${getImagesEditsUrl(apiRoot)}
-  image model: ${IMAGE_MODEL}
-  API mode: gpt-image-2 Images API only; no GPT text model required
+  image model: ${getImageModel()} (default ${DEFAULT_IMAGE_MODEL}; configure with --set-model)
+  API mode: Images API only; no GPT text model required
   request quality: fixed ${FIXED_REQUEST_QUALITY}
   output: ~/Pictures/88api-image-gen
   worker pool: enabled, one worker per task, auto parallel for independent tasks, max workers ${MAX_WORKERS}
@@ -3328,6 +3411,7 @@ async function main() {
   const { prompts, flags } = parseArgs(process.argv.slice(2));
   const config = loadConfig();
   setActiveApiRoot(resolveApiRoot(config));
+  setActiveModel(resolveImageModel(config));
   let requestedTransport;
   try {
     requestedTransport = normalizeTransport(flags.transport || DEFAULT_TRANSPORT);
@@ -3361,6 +3445,25 @@ async function main() {
     console.log(`88API API root saved: ${apiRoot}`);
     console.log(`generation: ${getImagesGenerationsUrl(apiRoot)}`);
     console.log(`edit: ${getImagesEditsUrl(apiRoot)}`);
+    return;
+  }
+
+  if (flags.setModel) {
+    let model;
+    try {
+      model = normalizeImageModel(flags.setModel);
+    } catch (error) {
+      console.error(`ERROR: ${error?.message || String(error)}`);
+      process.exit(1);
+    }
+    if (!model) {
+      console.error("ERROR: --set-model requires a non-empty model name.");
+      process.exit(1);
+    }
+    config.model = model;
+    saveConfig(config);
+    setActiveModel(model);
+    console.log(`88API image model saved: ${model}`);
     return;
   }
 
@@ -3495,6 +3598,16 @@ async function main() {
     saveConfig(config);
     console.log(`Batch mode saved: ${quality}, ${ratioLabel(ratio)} (${size}), concurrency ${concurrency}`);
     return;
+  }
+
+  if (flags.model) {
+    try {
+      setActiveModel(flags.model);
+    } catch (error) {
+      console.error(`ERROR: ${error?.message || String(error)}`);
+      process.exit(1);
+    }
+    console.log(`Image model: ${getImageModel()}`);
   }
 
   if (flags.resolveSize) {

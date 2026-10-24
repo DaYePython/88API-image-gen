@@ -1,7 +1,7 @@
 {
   "name": "88api-image-gen",
   "version": "0.6.0",
-  "description": "来自 88api.ai Token 聚合站的 Codex 专用生图插件，使用 gpt-image-2 Images API、真实流式预览与智能提示词编排。",
+  "description": "来自 88api.ai Token 聚合站的 Codex 专用生图插件，使用可配置模型（默认 gpt-image-2）的 Images API、真实流式预览与智能提示词编排。",
   "author": {
     "name": "88api.ai"
   },
@@ -11,7 +11,7 @@
   "interface": {
     "displayName": "88API-image-gen",
     "shortDescription": "Image2 Images API、真实流式预览、智能提示词与批量工作流。",
-    "longDescription": "来源于 88api.ai Token 聚合站的 Codex 专用生图插件，只调用 gpt-image-2 Images API，无需 GPT 文本模型权限；文生图支持原生 SSE 实时预览，并支持智能提示词、多参考图、最多 10 个 worker、批量工作流和自动补洞。",
+    "longDescription": "来源于 88api.ai Token 聚合站的 Codex 专用生图插件，使用可配置模型（默认 gpt-image-2）的 Images API，无需 GPT 文本模型权限；文生图支持原生 SSE 实时预览，并支持智能提示词、多参考图、最多 10 个 worker、批量工作流和自动补洞。",
     "developerName": "88api.ai",
     "category": "Productivity",
     "capabilities": ["Write"],

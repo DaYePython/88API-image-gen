@@ -5,7 +5,7 @@ description: "Generate or edit images with the 88api.ai Token aggregation servic
 
 # 88API-image-gen
 
-This is the Codex-native image generation plugin from the 88api.ai Token aggregation service. It only calls `gpt-image-2` through `/v1/images/generations` and `/v1/images/edits`; no GPT text model permission is required. A single text-to-image task can opt into native Images API partial-image SSE previews.
+This is the Codex-native image generation plugin from the 88api.ai Token aggregation service. It calls the configured image model (default `gpt-image-2`, customizable to names such as `gpt-image-2.5-flare` or `gpt-image-2.5-sunburst`) through `/v1/images/generations` and `/v1/images/edits`; no GPT text model permission is required. A single text-to-image task can opt into native Images API partial-image SSE previews.
 
 ## Script
 
@@ -27,10 +27,11 @@ When helping a user install this plugin from its repository, perform this onboar
 2. Install the repository marketplace and `88api-image-gen@88api-plugins` using the repository README commands.
 3. Check the local resize backend: PowerShell/System.Drawing on Windows, built-in `sips` on macOS, or ImageMagick (`magick`/`convert`) on Linux/Unix.
 4. Run the configuration check below.
-5. Configure credentials the user supplies. Users may say "base_url" for the API root:
+5. Configure credentials and model the user supplies. Users may say "base_url" for the API root:
    - API root / base_url → `--set-api-root "<base_url>"` (default `https://88api.ai` if omitted)
    - Key → `--set-key "<key>"`
-   If the user already provides both values in the install request, save them immediately after install checks. Never invent a base_url or key.
+   - Model → `--set-model "<model>"` (default `gpt-image-2`; free-form, e.g. `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`)
+   If the user already provides these values in the install request, save them immediately after install checks. Never invent a base_url, key, or model.
 6. If no key is configured and the user did not supply one, stop before generation and tell the user to visit `https://88api.ai/`, sign in, and create an **image-generation group key**. Then help the user save it locally with `--set-key`.
 
 Every time this skill is triggered for generation, run:
@@ -62,10 +63,19 @@ node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
 - Value must parse as a complete URL with `http:` or `https:` only
 - Reject credentials in the URL, query strings, and hash fragments
 - Trailing slashes are stripped; a path prefix is allowed, e.g. `https://host.example/v1-proxy`
-- Endpoints become `{API根地址}/v1/images/generations` and `{API根地址}/v1/images/edits`
+- A trailing `/v1` is accepted and not duplicated: both `https://host.example` and `https://host.example/v1` call `{host}/v1/images/generations` and `{host}/v1/images/edits`
 - `--get-config` reports `API根地址`, `API根地址来源` (`默认` or `自定义`), `文生图接口`, and `图生图接口`
 
 Do not invent a custom API root. Only set it when the user explicitly provides a gateway URL.
+
+Image model (same config file). Default is `gpt-image-2`. When the gateway exposes a different compatible Images model, save it with:
+
+```bash
+node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --set-model "gpt-image-2.5-sunburst"
+node "$HOME/plugins/88api-image-gen/scripts/generate.mjs" --get-config
+```
+
+Supported example names include `gpt-image-2`, `gpt-image-2.5-flare`, and `gpt-image-2.5-sunburst`; the value is passed verbatim as the Images API `model`. Use `--model "<name>"` to override the configured model for a single run without changing the saved config. Do not guess a model name the user or gateway did not provide.
 
 Recommended one-shot onboarding prompt:
 
@@ -90,9 +100,9 @@ Critical billing and stability warning:
 
 ## Codex Prompt Compiler and Orchestration
 
-The Codex model running this skill is the prompt planner. Prepare the final Image2 instruction from the current conversation without sending prompt planning to a separate external model.
+The Codex model running this skill is the prompt planner. Prepare the final Images API instruction from the current conversation without sending prompt planning to a separate external model.
 
-Before a paid image request, turn the user's request and conversation context into one clear Image2 instruction:
+Before a paid image request, turn the user's request and conversation context into one clear Images API instruction:
 
 - Preserve the user's intent, named people, brands, exact quoted text, numbers, required objects, and prohibitions.
 - For reference images, state the role of each image in argument order: identity, product, composition, style, background, or other user-defined role.
@@ -257,7 +267,7 @@ node "$HOME\plugins\88api-image-gen\scripts\generate.mjs" --workflow-batch-edit 
 
 ## Edit Existing Images
 
-The image-to-image chain always uses `gpt-image-2` Images API:
+The image-to-image chain always uses the configured Images API model (default `gpt-image-2`):
 
 - Endpoint: `POST https://88api.ai/v1/images/edits`
 - Input method: multipart form data with ordered `image[]` files
@@ -339,10 +349,10 @@ node "$HOME\plugins\88api-image-gen\scripts\generate.mjs" --nail-stress-test --p
 
 ## API Contract
 
-- API root: configurable with `--set-api-root <http(s) URL>`; default `https://88api.ai`; stored as `apiRoot` in `~/.agents/88api-image-gen-config.json`
+- API root: configurable with `--set-api-root <http(s) URL>`; default `https://88api.ai`; stored as `apiRoot` in `~/.agents/88api-image-gen-config.json`; a trailing `/v1` is accepted
 - Text-to-image: `POST {API_ROOT}/v1/images/generations`
 - Image edit: `POST {API_ROOT}/v1/images/edits`
-- Model: always `gpt-image-2`; GPT text-model permission is not required
+- Model: configurable with `--set-model <name>` (persisted) or `--model <name>` (single run); default `gpt-image-2`; stored as `model` in the same config file; GPT text-model permission is not required
 - Request size policy: always use the fixed 2K preset matrix and the supported aspect list above; do not request 1K, 4K, disabled ratios, or arbitrary `--size`
 - Auth: `Authorization: Bearer <88API Key>`
 - Images generation body: JSON with `model`, `prompt`, `size`, and `n:1`

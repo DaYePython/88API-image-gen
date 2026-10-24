@@ -2,16 +2,16 @@
 
 > 来源于 [88api.ai Token 聚合站](https://88api.ai/) 的生图插件，支持 Codex、Claude Code、Cursor、Hermes、Trae 和 Qoder。
 
-`88API-image-gen v0.6.0` 基于 `gpt-image-2`，由当前会话模型理解需求并整理提示词，提供文生图、图生图、多参考图、流式预览、批量任务及最多 10 个 worker 的调度能力。多个客户端共用同一份核心脚本和同一份本机配置（`~/.agents/88api-image-gen-config.json`），Key 与 base_url 只需配置一次。
+`88API-image-gen v0.6.0` 默认使用 `gpt-image-2`，也支持自定义模型名（如 `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`），由当前会话模型理解需求并整理提示词，提供文生图、图生图、多参考图、流式预览、批量任务及最多 10 个 worker 的调度能力。多个客户端共用同一份核心脚本和同一份本机配置（`~/.agents/88api-image-gen-config.json`），Key、base_url 与模型名只需配置一次。
 
 > [!CAUTION]
 > **低配置电脑切勿批量生图或启用多个 worker。** 本地卡死、断网、客户端崩溃或图片保存失败，不会撤销已经提交到 88API 云端的请求；云端已受理或完成的任务仍可能计费。首次使用请保持单 Key、单 worker、`--concurrency 1`。
 
 ## v0.6.0 核心能力
 
-- 核心生图模型为 `gpt-image-2`。
+- 默认生图模型为 `gpt-image-2`，可用 `--set-model` 持久化或 `--model` 单次覆盖为任意兼容模型名，例如 `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`。
 - 当前会话模型自动整理提示词、识别参考图角色；用户要求原文直传时不改写。
-- 所有任务只使用 Image2 Images API，不需要 GPT‑5.5 或其他文本模型权限。
+- 所有任务只使用 Images API，不需要 GPT‑5.5 或其他文本模型权限。
 - 文生图显式使用 `--preview` 时，通过 Images API 原生 SSE 获得真实 partial-image 预览。
 - 支持文生图、单图编辑、多参考图编辑、连续出图和通用批量工作流。
 - 支持断点续跑、失败补洞、任务报告和最多 10 个独立 worker。
@@ -140,12 +140,30 @@ node "$GEN" --get-config
 - 必须是完整的 `http://` 或 `https://` URL（用户口语中的 base_url）
 - 不要携带用户名密码、查询参数或 `#` 片段
 - 末尾斜杠会被自动去掉；若网关挂在子路径，可写成 `https://host.example/prefix`
+- base_url 可以自带 `/v1`（如 `https://host.example/v1`），插件不会重复拼接
 - 实际请求地址为 `{API根地址}/v1/images/generations` 与 `{API根地址}/v1/images/edits`
 - 不要把真实 base_url 凭证或 Key 写入仓库
 
 `--get-config` 会显示 `API根地址`、`API根地址来源`（`默认` / `自定义`）以及推导出的文生图 / 图生图接口。
 
-### 4. 可选：增加 worker
+### 4. 自定义生图模型
+
+默认模型为 `gpt-image-2`。如果网关提供其他兼容模型（例如 `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`），可保存为默认模型：
+
+```powershell
+node "$GEN" --set-model "gpt-image-2.5-sunburst"
+node "$GEN" --get-config
+```
+
+也可以只对单次任务覆盖，不修改本机配置：
+
+```powershell
+node "$GEN" --prompt "在河边钓鱼的小狗" --aspect 16:9 --model "gpt-image-2.5-flare"
+```
+
+模型名会原样写入 Images API 的 `model` 字段；恢复默认用 `--set-model "gpt-image-2"`。
+
+### 5. 可选：增加 worker
 
 一个 Key 就能正常使用。多个 Key 只会并行处理多张独立图片，不会加速单张图片。
 
@@ -260,7 +278,7 @@ node "$GEN" --workflow-batch-edit --fixed-ref "<人物参考图.png>" --item-dir
 
 - **没有 Key：**访问 88api.ai 创建生图分组 Key，再运行 `--set-key` 和 `--get-config`。
 - **自定义网关 / base_url 连不上：**确认 `--set-api-root` 写入的是可访问的完整 `http(s)` URL（即 base_url），并用 `--get-config` 核对 `文生图接口` / `图生图接口`。
-- **模型权限错误：**确认使用的是 88API“生图分组 Key”，并且可以访问 `gpt-image-2` Images API。
+- **模型权限错误：**确认使用的是 88API“生图分组 Key”，并且可以访问当前配置的模型（默认 `gpt-image-2`）；用 `--get-config` 核对 `生图模型`，必要时用 `--set-model` 修正模型名。
 - **图片编辑失败：**确认路径存在、格式为 PNG/JPG/JPEG/WebP，并使用 `--edit --image`。
 - **比例报错：**只使用上表支持的比例，不要传入 `--size`。
 - **批量超时：**先降到 `--concurrency 1`；不要手动重发 `[NO-RETRY]` 任务，先到 88API 使用日志确认状态。
